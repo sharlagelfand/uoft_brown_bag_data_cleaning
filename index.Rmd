@@ -1,0 +1,563 @@
+---
+title: "Cleaning up after the federal election"
+subtitle: "University of Toronto iSchool Data Cleaning Brown Bag"
+author: "Sharla Gelfand"
+date: "October 24, 2019"
+output:
+  xaringan::moon_reader:
+    css: ["default", "rladies", "rladies-fonts"]
+    lib_dir: libs
+    chakra: libs/remark-latest.min.js
+    nature:
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
+---
+
+```{r setup, include=FALSE}
+options(htmltools.dir.version = FALSE)
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, dpi = 320)
+```
+
+```{r, echo = FALSE, out.width = "80%", fig.align='center'}
+knitr::include_graphics("img/tweet.png")
+```
+
+---
+class: middle, center
+# Some questions to ask yourself...
+
+### 1. What do I want my data to look like when I go to use it?
+### 2. What does it look like now?
+### 3. How do I get there?
+### 4. How can I be as lazy as possible?
+
+---
+class: middle, center
+# Analyzing data from the election
+
+### Which ridings changed parties between 2015 and 2019? What were the changes?
+
+---
+class: inverse, middle, center
+
+# What do I want my data to look like when I go to use it?
+
+## Plan out the end result
+
+---
+
+## What should my data look like?
+
+####  Which ridings changed parties between 2015 and 2019? What were the changes?
+
+Elected parties, by riding:
+
+* A list of all ridings in Canada
+* Which party won in that riding in 2015
+* Which party won in that riding in 2019
+
+--
+
+```{r, echo=FALSE}
+knitr::include_graphics("img/data.svg")
+```
+
+---
+class: inverse, middle, center
+
+# What does my data look like now?
+
+## Assess the current state
+
+---
+
+```{r, echo = FALSE, message = FALSE}
+library(readr)
+library(magrittr)
+ridings_results_2015_raw <- read_csv(here::here("data", "results_2015.csv"))
+
+ridings_results_2019_raw <- read_tsv(here::here("data", "results_2019.txt"), skip = 1, guess_max = 339)
+ridings_results_2019_raw <- ridings_results_2019_raw %>%
+  dplyr::mutate_at(
+    dplyr::vars(`Political affiliation`),
+    ~ ifelse(.x == "NDP-New Democratic Party", "NDP", .x)
+  )
+
+ridings_results_2019_raw <- ridings_results_2019_raw %>%
+  dplyr::slice(1:338)
+```
+
+## 2015 Election Results
+
+[42nd General Election: Official Voting Results (Voting Results by Electoral District)](https://open.canada.ca/data/en/dataset/775f3136-1aa3-4854-a51e-1a2dab362525)
+
+```{r}
+ridings_results_2015_raw
+```
+
+---
+
+## 2015 Election Results
+
+```{r}
+library(dplyr)
+
+ridings_results_2015 <- ridings_results_2015_raw %>%
+  select(
+    `Electoral District Name/Nom de circonscription`,
+    `Elected Candidate/Candidat élu`
+  )
+
+head(ridings_results_2015)
+```
+
+--
+
+Riding name contains English and French. Elected party is contained within elected candidate field.
+
+---
+
+## 2019 Election Results
+
+[October 21, 2019 Federal Election Election Results](https://enr.elections.ca/National.aspx?lang=e)
+
+```{r}
+ridings_results_2019_raw
+```
+
+---
+
+## 2019 Election Results
+
+```{r}
+ridings_results_2019 <- ridings_results_2019_raw %>%
+  select(
+    `Electoral district`,
+    `Political affiliation`
+  )
+
+ridings_results_2019
+```
+
+--
+
+English riding name only, political party is available on its own.
+
+---
+class: inverse, middle, center
+
+# How do I get there? How do I know what I'm doing is right?
+
+## Make a plan. Take things slowly. Check your answers!
+
+---
+
+## We have...
+
+2015 data: a list of ridings (English and French names together) and which official was elected (with their political affiliation in the same field)
+
+2019 data: a list of ridings (English name only) and which political party was elected
+
+--
+
+## We want...
+
+A list of all ridings and which party won in 2015 and 2019
+---
+
+## Game plan:
+
+`r emo::ji("black_medium_square")` Make the data easier to work with
+
+--
+
+`r emo::ji("black_medium_square")` Extract the English riding name from the 2015 data
+
+--
+
+`r emo::ji("black_medium_square")` Ensure the ridings names from the two data sets match
+
+--
+
+`r emo::ji("black_medium_square")` Extract the elected party from the 2015 elected official
+
+--
+
+`r emo::ji("black_medium_square")` Combine the two data sets
+
+---
+
+## Make the data easier to work with
+
+```{r}
+names(ridings_results_2019)
+```
+
+--
+
+```{r space-in-names, eval = FALSE}
+ridings_results_2019 %>%
+  select(Electoral district)
+```
+
+--
+
+```{r, ref.label = "space-in-names", error = TRUE, echo = FALSE}
+```
+
+--
+
+```{r backticks, eval = FALSE}
+ridings_results_2019 %>%
+  select(`Electoral district`)
+```
+
+--
+
+```{r, ref.label = "backticks", echo = FALSE}
+```
+
+---
+
+## Make the data easier to work with
+
+The [`janitor` package](https://github.com/sfirke/janitor) is totally `r emo::ji("bomb")` for cleaning data.
+
+```{r clean-names, eval = FALSE}
+library(janitor)
+
+ridings_results_2015 <- ridings_results_2015 %>%
+  clean_names()
+
+ridings_results_2019 <- ridings_results_2019 %>%
+  clean_names()
+
+names(ridings_results_2019)
+```
+
+--
+
+```{r, ref.label = "clean-names", echo = FALSE}
+```
+
+--
+
+`r emo::ji("white_check_mark")` Make the data easier to work with
+
+---
+
+## Get the English riding name out of the 2015 data
+
+English riding name is everything before the first "/" (if there is one)
+
+--
+
+```{r english-riding-name, eval = FALSE}
+library(tidyr)
+
+ridings_results_2015 <- ridings_results_2015 %>%
+  separate(electoral_district_name_nom_de_circonscription,
+    into = "riding",
+    sep = "/")
+
+ridings_results_2015
+```
+
+--
+
+```{r, ref.label = "english-riding-name", echo = FALSE}
+```
+
+--
+
+`r emo::ji("white_check_mark")` Extract the English riding name from the 2015 data
+
+---
+
+## Ensure the riding names match
+
+```{r names-match, eval = FALSE}
+ridings_results_2015 <- ridings_results_2015 %>%
+  arrange(riding)
+
+ridings_results_2019 <- ridings_results_2019 %>%
+  rename(riding = electoral_district) %>%
+  arrange(riding)
+
+all(ridings_results_2015[["riding"]] == ridings_results_2019[["riding"]])
+```
+
+--
+
+```{r, ref.label = "names-match", echo = FALSE}
+```
+
+--
+
+```{r}
+ridings_results_2015 %>%
+  select(riding_2015 = riding) %>%
+  bind_cols(ridings_results_2019 %>%
+              select(riding_2019 = riding)) %>%
+  filter(riding_2015 != riding_2019)
+```
+
+--
+
+`r emo::ji("x")` Ensure the ridings names from the two data sets match
+
+---
+
+## Ensure the riding names match
+
+Replace all "--" with "-"
+
+--
+
+```{r}
+library(stringr)
+
+ridings_results_2015 <- ridings_results_2015 %>%
+  mutate(riding = str_replace_all(riding, "--", "-")) %>%
+  arrange(riding)
+
+ridings_results_2019 <- ridings_results_2019 %>%
+  mutate(riding = str_replace_all(riding, "--", "-")) %>%
+  arrange(riding)
+```
+
+--
+
+```{r}
+all(ridings_results_2015[["riding"]] == ridings_results_2019[["riding"]])
+```
+
+--
+
+`r emo::ji("white_check_mark")` Ensure the ridings names from the two data sets match
+
+---
+
+## Get the elected party out of the elected official
+
+```{r}
+ridings_results_2015 %>%
+  select(elected_candidate_candidat_elu)
+```
+
+---
+
+## Get the elected party out of the elected official
+
+Getting the party name in French would be easy - everything after the slash
+
+```{r french-names, eval = FALSE}
+ridings_results_2015 %>%
+  separate(
+    elected_candidate_candidat_elu,
+    into = c("candidate_and_english_party", "french_party"),
+    sep = "/"
+  ) %>%
+  count(french_party)
+```
+
+--
+
+```{r, ref.label = "french-names", echo = FALSE}
+```
+
+--
+
+Not as easy in English - party names are not just the word before the slash.
+
+---
+
+## Get the elected party out of the elected official
+
+I'm not above manual recoding!
+
+```{r recode-riding, eval = FALSE}
+ridings_results_2015 <- ridings_results_2015 %>%
+  mutate(party = case_when(
+    str_detect(elected_candidate_candidat_elu, "Conservative") ~ "Conservative",
+    str_detect(elected_candidate_candidat_elu, "NDP") ~ "NDP",
+    str_detect(elected_candidate_candidat_elu, "Liberal") ~ "Liberal",
+    str_detect(elected_candidate_candidat_elu, "Bloc Québécois") ~ "Bloc Québécois",
+    str_detect(elected_candidate_candidat_elu, "Green Party") ~ "Green Party"
+  )) %>%
+  select(-elected_candidate_candidat_elu)
+
+head(ridings_results_2015)
+```
+
+--
+
+```{r, ref.label = "recode-riding", echo = FALSE}
+```
+
+--
+
+`r emo::ji("white_check_mark")` Extract the elected party from the 2015 elected official
+
+---
+
+## Combine the 2015 and 2019 results
+
+```{r combine, eval = FALSE}
+ridings_results_2019 <- ridings_results_2019 %>%
+  rename(party = political_affiliation)
+
+riding_results <- ridings_results_2015 %>%
+  full_join(ridings_results_2019,
+    by = "riding",
+    suffix = c("_2015", "_2019")
+  )
+
+head(riding_results)
+```
+
+--
+
+```{r, ref.label = "combine", echo = FALSE}
+```
+
+--
+
+`r emo::ji("white_check_mark")` Combine the two data sets
+
+---
+
+## Combine the 2015 and 2019 results
+
+### Expectations
+
+```{r, echo=FALSE, out.width = "50%"}
+knitr::include_graphics("img/data.svg")
+```
+
+--
+
+### Reality
+
+```{r}
+head(riding_results)
+```
+
+---
+
+## What have we accomplished?
+
+`r emo::ji("white_check_mark")` Make the data easier to work with
+
+`r emo::ji("white_check_mark")` Extract the English riding name from the 2015 data
+
+`r emo::ji("white_check_mark")` Ensure the ridings names from the two data sets match
+
+`r emo::ji("white_check_mark")` Extract the elected party from the 2015 elected official
+
+`r emo::ji("white_check_mark")` Combine the two data sets
+
+---
+class: inverse, middle, center
+
+# What question did we want to answer?
+
+---
+
+## How many ridings elected a different party in 2019 than they did in 2015?
+
+```{r diff-parties, eval = FALSE}
+different_parties <- riding_results %>%
+  filter(party_2015 != party_2019)
+
+different_parties
+```
+
+--
+
+```{r, ref.label = "diff-parties", echo = FALSE}
+```
+
+---
+
+## How many ridings elected a different party in 2019 than they did in 2015?
+
+```{r party-change, eval = FALSE}
+library(glue)
+
+different_parties <- different_parties %>%
+  mutate(party_change = glue("{party_2015} to {party_2019}"))
+
+different_parties["party_change"]
+```
+
+--
+
+```{r, ref.label = "party-change", echo = FALSE}
+```
+
+---
+
+## How many ridings elected a different party in 2019 than they did in 2015?
+
+```{r party-change-tabyl, eval = FALSE}
+different_parties %>%
+  tabyl(party_change) %>%
+  adorn_pct_formatting() %>%
+  arrange(-n)
+```
+
+--
+
+```{r, ref.label = "party-change-tabyl", echo = FALSE}
+```
+
+---
+class: middle, center
+
+# What have we covered?
+
+### `r emo::ji("white_check_mark")` What do I want my data to look like when I go to use it?
+### `r emo::ji("white_check_mark")` What does it look like now?
+### `r emo::ji("white_check_mark")` How do I get there?
+### `r emo::ji("x")` How can I be as lazy as possible?
+
+---
+
+## How can I be as lazy as possible?
+
+--
+
+### Reduce friction!
+
+--
+
+Clean your column names
+
+--
+
+Optimize for human readability
+
+--
+
+If there's an easy way, take it (no one is handing out medals for figuring out regular expressions)
+
+--
+
+Consider alternative methods (`separate` versus regex)
+
+--
+
+Use packages that already exist. Keep up with what's out there ([rweekly.org](rweekly.org))
+
+---
+class: middle, center
+
+# Thank you!
+
+#### Sometimes I blog about cleaning data: [sharla.party](sharla.party)
+
+#### I tweet: @sharlagelfand
+
+#### Slides: [sharla.party/talks/uoft-brown-bag.html](https://sharla.party/talks/uoft-brown-bag.html)
